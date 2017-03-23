@@ -3,7 +3,7 @@ import random
 import argparse
 import time
 import datetime
-import line_profiler
+# import line_profiler
 from PIL import Image, ImageDraw
 
 
@@ -72,19 +72,6 @@ class Optimization(object):
             if random.random() < random_select:
                 new_population.append(individual)
 
-        # Mutation
-        for individual in new_population:
-            if mutate > random.random():
-                p = random.randint(0, len(individual.polygons) - 1)
-                p = individual.polygons[p]
-                p.mutate_vertex()
-                individual.score = None
-            if mutate > random.random():
-                p = random.randint(0, len(individual.polygons) - 1)
-                p = individual.polygons[p]
-                p.mutate_color()
-                individual.score = None
-
         # Breeding
         if len(self.population) < 10:
             raise ValueError('Population is too small for breeding')
@@ -99,10 +86,24 @@ class Optimization(object):
                 half = int(len(male.polygons) / 2)
                 polygons_count = len(male.polygons)
                 child = Individual(self.shape, polygons_count, init_empty=True)
-                # child.polygons = male.polygons[:half] + female.polygons[half:]
-                child.polygons = male.polygons
+                child.polygons = male.polygons[:half] + female.polygons[half:]
+                # child.polygons = male.polygons
                 children.append(child)
         new_population.extend(children)
+
+        # Mutation
+        for individual in new_population:
+            if mutate > random.random():
+                p = random.randint(0, len(individual.polygons) - 1)
+                p = individual.polygons[p]
+                p.mutate_vertex()
+                individual.score = None
+            if mutate > random.random():
+                p = random.randint(0, len(individual.polygons) - 1)
+                p = individual.polygons[p]
+                p.mutate_color()
+                individual.score = None
+        
         self.population = new_population
         self.generation += 1
         return 0
@@ -114,6 +115,7 @@ class Optimization(object):
         ending_time = starting_time + t
         images_list = []
         population_history = []
+        fittest_individual_history = []
         print('Running for ' + str(time_to_run) + ' min')
         print("Completion time: ", ending_time)
         print('-----')
@@ -128,6 +130,7 @@ class Optimization(object):
                 self.save_image()
                 speed = generation_count / (time.time() - start)
                 population_history.append(self.grade())
+                fittest_individual_history.append(self.mse(self.fittest_individual()))
         if show_animation:
             if images_list:
                 images_list[0].save('animation.gif', save_all=True, append_images=images_list)
@@ -136,6 +139,7 @@ class Optimization(object):
         print('Average speed ' + str(round(average_speed, 2)) + " gen/s")
         print("\nTimestamp: ", datetime.datetime.now())
         print(population_history)
+        print(fittest_individual_history)
 
 
 class Individual(object):
@@ -200,7 +204,7 @@ def main():
 
     img = Optimization(results.image)
     img.generate_population(population_size=10, polygons_count=25)
-    img.evolve_during(time_to_run=10, save_image_every=250, show_animation=True)
+    img.evolve_during(time_to_run=24, save_image_every=1000, show_animation=True)
 
 
 if __name__ == '__main__':
