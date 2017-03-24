@@ -3,7 +3,7 @@ import random
 import argparse
 import time
 import datetime
-# import line_profiler
+import line_profiler
 from PIL import Image, ImageDraw
 
 
@@ -50,15 +50,17 @@ class Optimization(object):
         individual_array = np.array(self.draw_individual(individual), dtype=np.int64)
         image_array = self.image_asarray
         # diff = np.absolute(np.subtract(individual_array, image_array)).sum()
-        diff = np.linalg.norm(np.subtract(individual_array, image_array))
+        # diff = np.linalg.norm(np.subtract(individual_array, image_array).reshape((3, -1)))
+        # diff = np.linalg.norm(np.subtract(individual_array, image_array))
         # diff = np.power(np.subtract(individual_array, image_array), 2).sum()
+        diff = np.absolute(np.subtract(individual_array, image_array)).sum()
         individual.score = diff
         return diff
 
     def grade(self):
         return sum([self.mse(individual) for individual in self.population]) / len(self.population)
 
-    def evolve(self, retain=0.2, random_select=0.00, mutate=0.1):
+    def evolve(self, retain=0.2, random_select=0.00, mutate=0.5):
 
         # Selection of the fittest
         graded = [(self.mse(individual), individual) for individual in self.population]
@@ -80,57 +82,69 @@ class Optimization(object):
         while len(children) < necessary_children:
             male = random.randint(0, len(new_population) - 1)
             female = random.randint(0, len(new_population) - 1)
-            if male != female:
+            # if male != female:
+            if True:
                 male = new_population[male]
                 female = new_population[female]
                 half = int(len(male.polygons) / 2)
                 polygons_count = len(male.polygons)
                 child = Individual(self.shape, polygons_count, init_empty=True)
-                child.polygons = male.polygons[:half] + female.polygons[half:]
-                # child.polygons = male.polygons
+                # child.polygons = male.polygons[:half] + female.polygons[half:]
+                child.polygons = female.polygons
                 children.append(child)
-        new_population.extend(children)
 
         # Mutation
-        for individual in new_population:
+        for individual in children:
             if mutate > random.random():
                 p = random.randint(0, len(individual.polygons) - 1)
                 p = individual.polygons[p]
-                p.mutate_vertex()
+                # p.mutate_vertex()
                 individual.score = None
             if mutate > random.random():
                 p = random.randint(0, len(individual.polygons) - 1)
                 p = individual.polygons[p]
                 p.mutate_color()
                 individual.score = None
-        
+
+        new_population.extend(children)
         self.population = new_population
         self.generation += 1
         return 0
 
-    def evolve_during(self, time_to_run=0.5, save_image_every=1500, show_animation=False):
-        self.save_image()
-        t = datetime.timedelta(0, 60 * time_to_run)
+    def picture_time(self, start, time_to_run, photograms_count, photograms):
+        return datetime.datetime.now() > start + datetime.timedelta(0, 60 * time_to_run * photograms_count / float(photograms))
+
+    def evolve_during(self, time_to_run=0.5, save_image_every=1500, photograms=10, show_animation=False):
+        # Setting times
         starting_time = datetime.datetime.now()
-        ending_time = starting_time + t
+        ending_time = starting_time + datetime.timedelta(0, 60 * time_to_run)
+        picture_time = datetime.timedelta(time_to_run / float(photograms))
+        picture_time = starting_time + datetime.timedelta(0, 60 * time_to_run / float(photograms))
+
+        # Lists of data
         images_list = []
         population_history = []
         fittest_individual_history = []
+        generation_count = 0
+        photograms_count = 1
+
+        self.save_image()
         print('Running for ' + str(time_to_run) + ' min')
         print("Completion time: ", ending_time)
         print('-----')
         start = time.time()
-        generation_count = 0
         while(datetime.datetime.now() < ending_time):
             generation_count += 1
             self.evolve()
-            if self.generation % save_image_every == 0:
+            if self.picture_time(starting_time, time_to_run, photograms_count, photograms):
+                photograms_count += 1
                 if show_animation:
                     images_list.append(self.resulting_image())
                 self.save_image()
                 speed = generation_count / (time.time() - start)
                 population_history.append(self.grade())
-                fittest_individual_history.append(self.mse(self.fittest_individual()))
+                fittest_individual = round(self.mse(self.fittest_individual()), 2)
+                fittest_individual_history.append(fittest_individual)
         if show_animation:
             if images_list:
                 images_list[0].save('animation.gif', save_all=True, append_images=images_list)
@@ -138,7 +152,7 @@ class Optimization(object):
         average_speed = self.generation / (time.time() - start)
         print('Average speed ' + str(round(average_speed, 2)) + " gen/s")
         print("\nTimestamp: ", datetime.datetime.now())
-        print(population_history)
+        # print(population_history)
         print(fittest_individual_history)
 
 
@@ -174,7 +188,7 @@ class Polygon(object):
     def mutate_vertex(self, amplitude=5):
         gen = random.randint(0, len(self.vertices) - 1)
         direction = random.randint(0, 1)
-        displacement = random.randint(-1, 1) * amplitude
+        displacement = random.randint(-amplitude, amplitude)
         new_vertex = [self.vertices[gen][0], self.vertices[gen][1]]
         new_vertex[direction] = min(max(new_vertex[direction] + displacement, 0), self.shape[1 - direction] - 1)
         self.vertices[gen] = tuple(new_vertex)
@@ -182,11 +196,12 @@ class Polygon(object):
     def random_color(self):
         return tuple([random.randint(0, 255) for _ in range(3)] + [50])
 
-    def mutate_color(self, amplitude=10):
-        direction = random.randint(0, 2)
-        displacement = random.randint(-1, 1) * amplitude
+    def mutate_color(self, amplitude=2):
+        channel = random.randint(0, 2)
+        displacement = random.randint(-amplitude, 0)
+        # displacement = random.randint(-amplitude, amplitude)
         RGB = [self.color[0], self.color[1], self.color[2]]
-        RGB[direction] = min(max(RGB[direction] + displacement, 0), 255)
+        RGB[channel] = min(max(RGB[channel] + displacement, 0), 255)
         self.color = tuple(RGB + [50])
 
 
@@ -203,9 +218,8 @@ def main():
     results = parser.parse_args()
 
     img = Optimization(results.image)
-    img.generate_population(population_size=10, polygons_count=25)
-    img.evolve_during(time_to_run=24, save_image_every=1000, show_animation=True)
-
+    img.generate_population(population_size=100, polygons_count=25)
+    img.evolve_during(time_to_run=2, save_image_every=10, show_animation=True)
 
 if __name__ == '__main__':
     main()
