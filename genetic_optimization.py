@@ -3,6 +3,7 @@ import random
 import argparse
 import time
 import datetime
+import copy
 import line_profiler
 from PIL import Image, ImageDraw
 
@@ -60,7 +61,7 @@ class Optimization(object):
     def grade(self):
         return sum([self.mse(individual) for individual in self.population]) / len(self.population)
 
-    def evolve(self, retain=0.2, random_select=0.00, mutate=0.5):
+    def evolve(self, retain=0.2, random_select=0.00, mutate=1.0):
 
         # Selection of the fittest
         graded = [(self.mse(individual), individual) for individual in self.population]
@@ -90,7 +91,8 @@ class Optimization(object):
                 polygons_count = len(male.polygons)
                 child = Individual(self.shape, polygons_count, init_empty=True)
                 # child.polygons = male.polygons[:half] + female.polygons[half:]
-                child.polygons = female.polygons
+                # child.polygons = list(female.polygons)
+                child.polygons = copy.deepcopy(female.polygons)
                 children.append(child)
 
         # Mutation
@@ -154,6 +156,7 @@ class Optimization(object):
         print("\nTimestamp: ", datetime.datetime.now())
         # print(population_history)
         print(fittest_individual_history)
+        print('Improvement: ', (fittest_individual_history[0]-fittest_individual_history[-1])/fittest_individual_history[0])
 
 
 class Individual(object):
@@ -198,7 +201,7 @@ class Polygon(object):
 
     def mutate_color(self, amplitude=2):
         channel = random.randint(0, 2)
-        displacement = random.randint(-amplitude, 0)
+        displacement = random.randint(-amplitude, amplitude)
         # displacement = random.randint(-amplitude, amplitude)
         RGB = [self.color[0], self.color[1], self.color[2]]
         RGB[channel] = min(max(RGB[channel] + displacement, 0), 255)
