@@ -68,12 +68,12 @@ class Optimization(object):
         graded = sorted(graded, key=lambda x: x[0])
         graded = [individual[1] for individual in graded]
         retain_lenght = int(len(graded) * retain)
-        new_population = graded[:retain_lenght]
+        new_population = copy.deepcopy(graded[:retain_lenght])
 
         # Random selection
         for individual in graded[retain_lenght:]:
             if random.random() < random_select:
-                new_population.append(individual)
+                new_population.append(copy.deepcopy(individual))
 
         # Breeding
         if len(self.population) < 10:
@@ -88,12 +88,12 @@ class Optimization(object):
                 male = new_population[male]
                 female = new_population[female]
                 half = int(len(male.polygons) / 2)
-                polygons_count = len(male.polygons)
+                polygons_count = len(female.polygons)
                 child = Individual(self.shape, polygons_count, init_empty=True)
                 # child.polygons = male.polygons[:half] + female.polygons[half:]
-                # child.polygons = list(female.polygons)
                 child.polygons = copy.deepcopy(female.polygons)
-                children.append(child)
+                # children.append(copy.deepcopy(child))
+                children.append(copy.deepcopy(new_population[0]))
 
         # Mutation
         for individual in children:
@@ -201,7 +201,7 @@ class Polygon(object):
 
     def mutate_color(self, amplitude=2):
         channel = random.randint(0, 2)
-        displacement = random.randint(-amplitude, amplitude)
+        displacement = random.randint(-amplitude, 0)
         # displacement = random.randint(-amplitude, amplitude)
         RGB = [self.color[0], self.color[1], self.color[2]]
         RGB[channel] = min(max(RGB[channel] + displacement, 0), 255)
