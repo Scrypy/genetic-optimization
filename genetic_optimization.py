@@ -64,6 +64,11 @@ class Optimization(object):
     def evolve(self, retain=0.2, random_select=0.00, mutate=1.0):
 
         # Selection of the fittest
+        # graded = np.array([[self.mse(individual), individual] for individual in self.population])
+        # graded = graded[graded[:, 0].argsort()]
+        # graded = [individual[1] for individual in graded]
+        # TODO: Test which sort is faster (np or built in) and check if they sort by the same array
+        # TODO: write its own function
         graded = [(self.mse(individual), individual) for individual in self.population]
         graded = sorted(graded, key=lambda x: x[0])
         graded = [individual[1] for individual in graded]
@@ -114,14 +119,13 @@ class Optimization(object):
         return 0
 
     def picture_time(self, start, time_to_run, photograms_count, photograms):
-        return datetime.datetime.now() > start + datetime.timedelta(0, 60 * time_to_run * photograms_count / float(photograms))
+        t = time_to_run * photograms_count / float(photograms)
+        return datetime.datetime.now() > start + datetime.timedelta(0, 60 * t)
 
     def evolve_during(self, time_to_run=0.5, save_image_every=1500, photograms=10, show_animation=False):
         # Setting times
         starting_time = datetime.datetime.now()
         ending_time = starting_time + datetime.timedelta(0, 60 * time_to_run)
-        picture_time = datetime.timedelta(time_to_run / float(photograms))
-        picture_time = starting_time + datetime.timedelta(0, 60 * time_to_run / float(photograms))
 
         # Lists of data
         images_list = []
@@ -131,6 +135,7 @@ class Optimization(object):
         photograms_count = 1
 
         self.save_image()
+        m_list = []
         print('Running for ' + str(time_to_run) + ' min')
         print("Completion time: ", ending_time)
         print('-----')
@@ -138,6 +143,7 @@ class Optimization(object):
         while(datetime.datetime.now() < ending_time):
             generation_count += 1
             self.evolve()
+            fittest_individual_history.append((generation_count, self.mse(self.fittest_individual()) / 1000000))
             if self.picture_time(starting_time, time_to_run, photograms_count, photograms):
                 photograms_count += 1
                 if show_animation:
@@ -146,7 +152,7 @@ class Optimization(object):
                 speed = generation_count / (time.time() - start)
                 population_history.append(self.grade())
                 fittest_individual = round(self.mse(self.fittest_individual()), 2)
-                fittest_individual_history.append(fittest_individual)
+                # fittest_individual_history.append(fittest_individual)
         if show_animation:
             if images_list:
                 images_list[0].save('animation.gif', save_all=True, append_images=images_list)
@@ -155,8 +161,10 @@ class Optimization(object):
         print('Average speed ' + str(round(average_speed, 2)) + " gen/s")
         print("\nTimestamp: ", datetime.datetime.now())
         # print(population_history)
-        print(fittest_individual_history)
-        print('Improvement: ', (fittest_individual_history[0]-fittest_individual_history[-1])/fittest_individual_history[0])
+        for i in fittest_individual_history:
+            print(i)
+        # improvement = (fittest_individual_history[0]-fittest_individual_history[-1])/fittest_individual_history[0]
+        # print('Improvement: ', improvement)
 
 
 class Individual(object):
@@ -175,7 +183,7 @@ class Individual(object):
 
 class Polygon(object):
     def __init__(self, shape):
-        self.shape = shape
+        self.shape = shape # TODO: *Overkill* (Don't need to save the image shape in EVERY polygon)
         self.vertices = self.generate_random_vertices(shape)
         self.color = self.random_color()
 
