@@ -1,5 +1,6 @@
 import numpy as np
 from PIL import Image
+from .. import genetic_optimization
 
 
 def mse(self, individual):
