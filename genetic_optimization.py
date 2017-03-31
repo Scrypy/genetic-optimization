@@ -1,10 +1,10 @@
 import numpy as np
 import random
-import argparse
 import time
 import datetime
 import copy
-import line_profiler
+import os
+import pickle
 from PIL import Image, ImageDraw
 
 
@@ -19,7 +19,7 @@ class Individual(object):
             self.polygons = []
 
     def draw_individual(self):
-        img = Image.fromarray(np.zeros(self.shape), 'RGB')
+        img = Image.new('RGB', (self.shape[1], self.shape[0]))
         draw = ImageDraw.Draw(img, 'RGBA')
         for polygon in self.polygons:
             draw.polygon(polygon.vertices, fill=polygon.color)
@@ -28,11 +28,7 @@ class Individual(object):
     def mse(self, image_array):
         if not self.score:
             individual_array = np.array(self.draw_individual(), dtype=np.int64)
-            # diff = np.absolute(np.subtract(individual_array, image_array)).sum()
-            # diff = np.linalg.norm(np.subtract(individual_array, image_array).reshape((3, -1)))
-            # diff = np.linalg.norm(np.subtract(individual_array, image_array))
-            # diff = np.power(np.subtract(individual_array, image_array), 2).sum()
-            self.score = np.absolute(np.subtract(individual_array, image_array)).sum()
+            self.score = np.linalg.norm(np.subtract(individual_array, image_array))
         return self.score
 
     def generate_polygons(self):
@@ -49,7 +45,8 @@ class Individual(object):
 
 class Polygon(object):
     def __init__(self, shape):
-        self.shape = shape # TODO: *Overkill* (Don't need to save the image shape in EVERY polygon)
+        # TODO: *Overkill* (Don't need to save the image shape in EVERY polygon)
+        self.shape = shape
         self.vertices = self.generate_random_vertices(shape)
         self.color = self.random_color()
 
@@ -57,8 +54,8 @@ class Polygon(object):
         vertices = []
         vertices_count = random.randint(3, 5)
         for _ in range(vertices_count):
-            a = random.randint(0, self.shape[1] - 1)
-            b = random.randint(0, self.shape[0] - 1)
+            a = random.randint(0, shape[1] - 1)
+            b = random.randint(0, shape[0] - 1)
             vertices.append((a, b))
         return vertices
 
@@ -83,38 +80,41 @@ class Polygon(object):
 
 
 class Optimization(object):
-    def __init__(self, path_to_image):
-        self.image = Image.open(path_to_image).convert('RGB')
-        self.image_asarray = np.array(self.image, dtype=np.int64)
-        self.shape = self.image_asarray.shape
-        self.population = []
-        self.generation = 0
-
-    def fittest_individual(self):
-        graded = [(individual.mse(self.image_asarray), individual) for individual in self.population]
-        graded = sorted(graded, key=lambda x: x[0])
-        graded = [individual[1] for individual in graded]
-        return graded[0]
+    def __init__(self, path_to_image=None, population_size=None, polygons_count=None, init_empty=False):
+        if init_empty:
+            pass
+        else:
+            self.image_filename = os.path.basename(path_to_image)
+            self.pickle_file = os.path.splitext(path_to_image)[0] + str('.pickle')
+            self.image = Image.open(path_to_image).convert('RGB')
+            self.image_as_array = np.array(self.image, dtype=np.int64)
+            self.shape = self.image_as_array.shape
+            self.generation = 0
+            self.population = [Individual(self.shape, polygons_count) for _ in range(population_size)]
+            self.fittest_individual = self.sort_population()[0]
+            self.fittest_individual_history = []
 
     def save_image(self):
-        img = self.fittest_individual().draw_individual()
+        img = self.fittest_individual.draw_individual()
         image_filename = 'image-{}.jpg'.format(self.generation)
-        img.save(image_filename)
+        images_dir = 'images_' + os.path.splitext(self.image_filename)[0]
+        if not os.path.exists(images_dir):
+            os.mkdir(images_dir)
+        img.save(os.path.join(images_dir, image_filename))
 
     def resulting_image(self):
-        img = self.fittest_individual().draw_individual()
+        img = self.fittest_individual.draw_individual()
         return img
 
-    def generate_population(self, population_size, polygons_count):
-        self.population = [Individual(self.shape, polygons_count) for _ in range(population_size)]
-
     def grade(self):
-        return sum([individual.mse(self.image_asarray) for individual in self.population]) / len(self.population)
+        return sum([individual.mse(self.image_as_array) for individual in self.population]) / len(self.population)
 
-    def sort_population(self, graded_list):
+    def sort_population(self):
+        graded_list = [(individual.mse(self.image_as_array), individual) for individual in self.population]
         random.shuffle(graded_list)
         graded_list = sorted(graded_list, key=lambda x: x[0])
         graded_list = [individual[1] for individual in graded_list]
+        self.fittest_individual = graded_list[0]
         return graded_list
 
     def sort_population_numpy(self):
@@ -128,14 +128,13 @@ class Optimization(object):
         graded = np.array([[self.mse(individual), individual] for individual in self.population])
         return 0
 
-    def evolve(self, retain=0.2, random_select=0.02, mutate=0.7):
+    def evolve(self, retain, random_select, mutate):
 
         # Selection of the fittest
         # TODO: Test which sort is faster (np or built in) and check if they sort by the same array
         # TODO: write its own function
         # sorted_list = self.sort_population_numpy()
-        graded = [(individual.mse(self.image_asarray), individual) for individual in self.population]
-        sorted_list = self.sort_population(graded)
+        sorted_list = self.sort_population()
         # sorted_numpy = self.sort_population_numpy()
         retain_lenght = int(len(sorted_list) * retain)
         new_population = sorted_list[:retain_lenght]
@@ -178,19 +177,28 @@ class Optimization(object):
         self.generation += 1
         return 0
 
+    def save_status(self):
+        with open(self.pickle_file, 'wb') as f:
+            pickle.dump(self, f)
+
+    def load_status(self, filename):
+        print('Resuming...')
+        with open(filename, 'rb') as f:
+            return pickle.load(f)
+
     def picture_time(self, start, time_to_run, photograms_count, photograms):
         t = time_to_run * photograms_count / float(photograms)
         return datetime.datetime.now() > start + datetime.timedelta(0, 60 * t)
 
-    def evolve_during(self, time_to_run=0.5, frames=10, show_animation=False, save_images=True):
+    def evolve_during(self, time_to_run=0.5, frames=10, show_animation=False, save_images=False,
+                      retain=0.2, random_select=0.02, mutate=0.7, verbose=False,
+                      save_progress=False):
         # Setting times
         starting_time = datetime.datetime.now()
         ending_time = starting_time + datetime.timedelta(0, 60 * time_to_run)
 
         # Lists of data
         images_list = []
-        population_history = []
-        fittest_individual_history = []
         generation_count = 0
         photograms_count = 1
 
@@ -200,53 +208,33 @@ class Optimization(object):
         print("Completion time: ", ending_time)
         print('-----')
         start = time.time()
+
         while datetime.datetime.now() < ending_time:
             generation_count += 1
-            self.evolve()
+            self.evolve(retain, random_select, mutate)
             if self.picture_time(starting_time, time_to_run, photograms_count, frames):
                 photograms_count += 1
+
                 if show_animation:
                     images_list.append(self.resulting_image())
                 if save_images:
                     self.save_image()
 
-                speed = generation_count / (time.time() - start)
-                population_history.append(self.grade())
-                fittest_individual = round(self.fittest_individual().mse(self.image_asarray), 2)
-                fittest_individual_history.append(fittest_individual)
+                fittest = round(self.fittest_individual.mse(self.image_as_array), 2)
+                self.fittest_individual_history.append(fittest)
+                if verbose:
+                    print(fittest)
+
+        if save_progress:
+            self.save_status()
+
         if show_animation:
             if images_list:
                 images_list[0].save('animation.gif', save_all=True, append_images=images_list)
+
         self.save_image()
-        average_speed = self.generation / (time.time() - start)
-        print('Average speed ' + str(round(average_speed, 2)) + " gen/s")
-        print("\nTimestamp: ", datetime.datetime.now())
-        # print(population_history)
-        for i in fittest_individual_history:
-            print(i)
-        improvement = (fittest_individual_history[0]-fittest_individual_history[-1])/fittest_individual_history[0]
-        print('Improvement: ' + str(round(100 * improvement, 2)) + '%')
+        average_speed = generation_count / (time.time() - start)
+        improvement = (self.fittest_individual_history[0]
+                    - self.fittest_individual_history[-1]) / self.fittest_individual_history[0]
+        return average_speed, improvement, self.fittest_individual_history, self.generation
 
-
-
-
-
-def main():
-    parser = argparse.ArgumentParser(
-        description='Optimizing number of polygons',
-        prog='genetic-optimization'
-    )
-    parser.add_argument(
-        'image',
-        type=str,
-        help='Path to image e.g. /images/pic.jpg'
-    )
-    results = parser.parse_args()
-
-    img = Optimization(results.image)
-    img.generate_population(population_size=100, polygons_count=25)
-    img.evolve_during(time_to_run=15, show_animation=True, save_images=True)
-
-
-if __name__ == '__main__':
-    main()
